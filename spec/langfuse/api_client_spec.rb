@@ -442,9 +442,9 @@ RSpec.describe Langfuse::ApiClient do
         expect(options[:backoff_factor]).to eq(2)
       end
 
-      it "configures retry for GET requests only" do
+      it "configures retry for GET and POST requests" do
         options = api_client.send(:retry_options)
-        expect(options[:methods]).to eq([:get])
+        expect(options[:methods]).to contain_exactly(:get, :post)
       end
 
       it "configures retry for transient error status codes" do
@@ -681,6 +681,142 @@ RSpec.describe Langfuse::ApiClient do
         expect do
           api_client.send_batch(events)
         end.to raise_error(Langfuse::ApiError, /Batch send failed/)
+      end
+    end
+
+    context "with retry logic for batch operations" do
+      # NOTE: Direct retry behavior testing is challenging with WebMock due to
+      # known incompatibilities. These tests verify the middleware is properly
+      # configured and test retry behavior using mocks. Actual retry behavior
+      # for status codes is tested in integration tests.
+
+      it "retries on transient network errors (ConnectionFailed)" do
+        # First attempt fails with connection error, second succeeds
+        stub_request(:post, "#{base_url}/api/public/ingestion")
+          .to_raise(Faraday::ConnectionFailed.new("Connection failed"))
+          .then
+          .to_return(status: 200, body: "", headers: {})
+
+        expect { api_client.send_batch(events) }.not_to raise_error
+
+        # Verify retry happened (should be 2 requests)
+        expect(
+          a_request(:post, "#{base_url}/api/public/ingestion")
+        ).to have_been_made.times(2)
+      end
+
+      it "retries on timeout errors" do
+        # First attempt times out, second succeeds
+        stub_request(:post, "#{base_url}/api/public/ingestion")
+          .to_timeout
+          .then
+          .to_return(status: 200, body: "", headers: {})
+
+        expect { api_client.send_batch(events) }.not_to raise_error
+
+        # Verify retry happened
+        expect(
+          a_request(:post, "#{base_url}/api/public/ingestion")
+        ).to have_been_made.times(2)
+      end
+
+      it "configures retry for POST requests to batch endpoint" do
+        options = api_client.send(:retry_options)
+        expect(options[:methods]).to include(:post)
+      end
+
+      it "configures retry for transient error status codes (429, 503, 504)" do
+        options = api_client.send(:retry_options)
+        expect(options[:retry_statuses]).to include(429, 503, 504)
+      end
+
+      it "handles Faraday::RetriableResponse after retries exhausted for 429" do
+        # Simulate retry middleware exhausting retries for 429
+        mock_response = instance_double(
+          Faraday::Response,
+          status: 429,
+          body: { "error" => "Rate limit exceeded" }
+        )
+        retriable_error = Faraday::RetriableResponse.new("Retries exhausted", mock_response)
+
+        allow(api_client.connection).to receive(:post).and_raise(retriable_error)
+
+        expect(api_client.logger).to receive(:error).with(/Retries exhausted - 429/)
+        expect do
+          api_client.send_batch(events)
+        end.to raise_error(Langfuse::ApiError, /Batch send failed \(429\)/)
+      end
+
+      it "handles Faraday::RetriableResponse after retries exhausted for 503" do
+        # Simulate retry middleware exhausting retries for 503
+        mock_response = instance_double(
+          Faraday::Response,
+          status: 503,
+          body: { "error" => "Service unavailable" }
+        )
+        retriable_error = Faraday::RetriableResponse.new("Retries exhausted", mock_response)
+
+        allow(api_client.connection).to receive(:post).and_raise(retriable_error)
+
+        expect(api_client.logger).to receive(:error).with(/Retries exhausted - 503/)
+        expect do
+          api_client.send_batch(events)
+        end.to raise_error(Langfuse::ApiError, /Batch send failed \(503\)/)
+      end
+
+      it "handles Faraday::RetriableResponse after retries exhausted for 504" do
+        # Simulate retry middleware exhausting retries for 504
+        mock_response = instance_double(
+          Faraday::Response,
+          status: 504,
+          body: { "error" => "Gateway timeout" }
+        )
+        retriable_error = Faraday::RetriableResponse.new("Retries exhausted", mock_response)
+
+        allow(api_client.connection).to receive(:post).and_raise(retriable_error)
+
+        expect(api_client.logger).to receive(:error).with(/Retries exhausted - 504/)
+        expect do
+          api_client.send_batch(events)
+        end.to raise_error(Langfuse::ApiError, /Batch send failed \(504\)/)
+      end
+
+      it "does not retry on non-retriable errors (401)" do
+        # 401 should not be retried
+        stub_request(:post, "#{base_url}/api/public/ingestion")
+          .to_return(
+            status: 401,
+            body: { error: "Unauthorized" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        expect do
+          api_client.send_batch(events)
+        end.to raise_error(Langfuse::UnauthorizedError)
+
+        # Should only attempt once
+        expect(
+          a_request(:post, "#{base_url}/api/public/ingestion")
+        ).to have_been_made.once
+      end
+
+      it "does not retry on non-retriable errors (400)" do
+        # 400 should not be retried
+        stub_request(:post, "#{base_url}/api/public/ingestion")
+          .to_return(
+            status: 400,
+            body: { error: "Bad Request" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        expect do
+          api_client.send_batch(events)
+        end.to raise_error(Langfuse::ApiError, /Batch send failed \(400\)/)
+
+        # Should only attempt once
+        expect(
+          a_request(:post, "#{base_url}/api/public/ingestion")
+        ).to have_been_made.once
       end
     end
   end

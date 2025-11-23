@@ -131,12 +131,13 @@ module Langfuse
     # Send a batch of events to the Langfuse ingestion API
     #
     # Sends events (scores, traces, observations) to the ingestion endpoint.
-    # This method does not retry on failure (POST requests are not retried by default).
+    # Retries transient errors (429, 503, 504, network errors) with exponential backoff.
+    # Batch operations are idempotent (events have unique IDs), so retries are safe.
     #
     # @param events [Array<Hash>] Array of event hashes to send
     # @return [void]
     # @raise [UnauthorizedError] if authentication fails
-    # @raise [ApiError] for other API errors
+    # @raise [ApiError] for other API errors after retries exhausted
     #
     # @example
     #   events = [
@@ -157,6 +158,10 @@ module Langfuse
 
       response = connection.post(path, payload)
       handle_batch_response(response)
+    rescue Faraday::RetriableResponse => e
+      # Retry middleware exhausted all retries - handle the final response
+      logger.error("Langfuse batch send failed: Retries exhausted - #{e.response.status}")
+      handle_batch_response(e.response)
     rescue Faraday::Error => e
       logger.error("Langfuse batch send failed: #{e.message}")
       raise ApiError, "Batch send failed: #{e.message}"
@@ -210,7 +215,7 @@ module Langfuse
     # Retries transient errors with exponential backoff:
     # - Max 2 retries (3 total attempts)
     # - Exponential backoff (0.05s * 2^retry_count)
-    # - Only retries GET requests (safe to retry)
+    # - Retries GET requests and POST requests to batch endpoint (idempotent operations)
     # - Retries on: 429 (rate limit), 503 (service unavailable), 504 (gateway timeout)
     # - Does NOT retry on: 4xx errors (except 429), 5xx errors (except 503, 504)
     #
@@ -220,7 +225,7 @@ module Langfuse
         max: 2,
         interval: 0.05,
         backoff_factor: 2,
-        methods: [:get],
+        methods: %i[get post],
         retry_statuses: [429, 503, 504],
         exceptions: [Faraday::TimeoutError, Faraday::ConnectionFailed]
       }
