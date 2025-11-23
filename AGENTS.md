@@ -1,4 +1,4 @@
-This is the official **Langfuse Ruby SDK** (langfuse-rb), providing LLM tracing, observability, and prompt management capabilities. The project is being built from scratch following an iterative, test-driven approach.
+This is the official **Langfuse Ruby SDK** (langfuse-rb), providing LLM tracing, observability, and prompt management capabilities.
 
 **Key Design Principles:**
 - **Rails-Friendly**: Global configuration pattern with `Langfuse.configure` block
