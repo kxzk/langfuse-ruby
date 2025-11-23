@@ -4,11 +4,11 @@ require "spec_helper"
 require "opentelemetry/sdk"
 
 RSpec.describe Langfuse::BaseObservation do
-  # Test subclass that implements the required #type method
+  # Test subclass that passes type to super
   let(:test_subclass) do
     Class.new(Langfuse::BaseObservation) do
-      def type
-        "test_observation"
+      def initialize(otel_span, otel_tracer, attributes: nil)
+        super(otel_span, otel_tracer, attributes: attributes, type: "test_observation")
       end
     end
   end
@@ -81,22 +81,18 @@ RSpec.describe Langfuse::BaseObservation do
   end
 
   describe "#type" do
-    it "returns the type from subclass implementation" do
+    it "returns the type set during initialization" do
       expect(observation.type).to eq("test_observation")
     end
 
-    it "raises NotImplementedError if not implemented and not in attributes" do
+    it "raises ArgumentError if type is not provided" do
       abstract_class = Class.new(described_class)
-      obs = abstract_class.new(otel_span, otel_tracer)
-
-      expect { obs.type }.to raise_error(NotImplementedError, /Subclass must implement #type/)
+      expect { abstract_class.new(otel_span, otel_tracer) }.to raise_error(ArgumentError, /type must be provided/)
     end
 
-    it "reads type from span attributes if not implemented by subclass" do
-      # Set type attribute directly on span
-      otel_span.set_attribute(Langfuse::OtelAttributes::OBSERVATION_TYPE, "custom_type")
+    it "returns the type passed to initialize" do
       abstract_class = Class.new(described_class)
-      obs = abstract_class.new(otel_span, otel_tracer)
+      obs = abstract_class.new(otel_span, otel_tracer, type: "custom_type")
 
       expect(obs.type).to eq("custom_type")
     end
@@ -398,9 +394,72 @@ RSpec.describe Langfuse::BaseObservation do
       # Should not have prompt attributes
       expect(span_data.attributes).not_to have_key("langfuse.observation.prompt.name")
     end
+
+    it "normalizes prompt objects that respond to name and version" do
+      # Create an object that responds to name and version methods
+      prompt_obj = Class.new do
+        def name
+          "test_prompt"
+        end
+
+        def version
+          42
+        end
+      end.new
+
+      child = observation.start_observation("test", { prompt: prompt_obj }, as_type: :generation)
+      span_data = child.otel_span.to_span_data
+
+      expect(span_data.attributes["langfuse.observation.prompt.name"]).to eq("test_prompt")
+      expect(span_data.attributes["langfuse.observation.prompt.version"]).to eq(42)
+    end
   end
 
-  describe "#create_observation_wrapper" do
+  describe "Generation setters" do
+    before do
+      Langfuse.configure do |config|
+        config.public_key = "pk_test"
+        config.secret_key = "sk_test"
+        config.base_url = "https://cloud.langfuse.com"
+      end
+    end
+
+    let(:generation) { Langfuse.start_observation("generation", {}, as_type: :generation) }
+
+    it "sets usage via assignment" do
+      generation.usage = { prompt_tokens: 100, completion_tokens: 50, total_tokens: 150 }
+      span_data = generation.otel_span.to_span_data
+      usage_attr_value = span_data.attributes["langfuse.observation.usage"]
+      expect(usage_attr_value).not_to be_nil
+      usage_attr = JSON.parse(usage_attr_value)
+      expect(usage_attr["promptTokens"]).to eq(100)
+      expect(usage_attr["completionTokens"]).to eq(50)
+      expect(usage_attr["totalTokens"]).to eq(150)
+    end
+
+    it "sets model via assignment" do
+      generation.model = "gpt-4"
+      span_data = generation.otel_span.to_span_data
+      expect(span_data.attributes["langfuse.observation.model"]).to eq("gpt-4")
+    end
+
+    it "sets model_parameters via assignment" do
+      generation.model_parameters = { temperature: 0.7, max_tokens: 100 }
+      span_data = generation.otel_span.to_span_data
+      params_attr_value = span_data.attributes["langfuse.observation.modelParameters"]
+      expect(params_attr_value).not_to be_nil
+      params_attr = JSON.parse(params_attr_value)
+      expect(params_attr["temperature"]).to eq(0.7)
+      expect(params_attr["maxTokens"]).to eq(100)
+    end
+
+    it "returns self from update" do
+      result = generation.update({ output: "test" })
+      expect(result).to eq(generation)
+    end
+  end
+
+  describe "#start_observation type handling" do
     it "creates Generation wrapper for generation type" do
       child = observation.start_observation("test", {}, as_type: :generation)
       expect(child).to be_a(Langfuse::Generation)
@@ -411,62 +470,123 @@ RSpec.describe Langfuse::BaseObservation do
       expect(child).to be_a(Langfuse::Span)
     end
 
-    it "creates Span wrapper for other types" do
-      %w[event tool agent chain].each do |type|
-        child = observation.start_observation("test", {}, as_type: type.to_sym)
-        expect(child).to be_a(Langfuse::Span)
+    it "creates Event wrapper for event type" do
+      child = observation.start_observation("test", {}, as_type: :event)
+      expect(child).to be_a(Langfuse::Event)
+    end
+
+    it "creates specific wrapper classes for known types" do
+      type_map = {
+        tool: Langfuse::Tool,
+        agent: Langfuse::Agent,
+        chain: Langfuse::Chain,
+        retriever: Langfuse::Retriever,
+        evaluator: Langfuse::Evaluator,
+        guardrail: Langfuse::Guardrail,
+        embedding: Langfuse::Embedding
+      }
+
+      type_map.each do |type, expected_class|
+        child = observation.start_observation("test", {}, as_type: type)
+        expect(child).to be_a(expected_class)
       end
+    end
+
+    it "creates Span wrapper for unrecognized types" do
+      child = observation.start_observation("test", {}, as_type: :unknown_type)
+      expect(child).to be_a(Langfuse::Span)
     end
   end
 
   describe "hierarchical structure" do
     it "creates nested observations" do
-      tracer = Langfuse::Tracer.new(otel_tracer: otel_tracer)
-      tracer.trace(name: "parent") do |trace|
-        trace.span(name: "level-1") do |span1|
-          span1.start_observation("level-2") do |span2|
-            span2.start_observation("level-3") do |span3|
-              expect(span3).to be_a(described_class)
-              expect(span3.trace_id).to eq(trace.trace_id)
-            end
+      parent_span = otel_tracer.start_span("parent")
+      parent_obs = Langfuse::Span.new(parent_span, otel_tracer)
+
+      parent_obs.start_observation("level-1") do |span1|
+        span1.start_observation("level-2") do |span2|
+          span2.start_observation("level-3") do |span3|
+            expect(span3).to be_a(described_class)
+            expect(span3.trace_id).to eq(parent_obs.trace_id)
           end
         end
       end
     end
 
     it "shares trace_id across nested observations" do
-      tracer = Langfuse::Tracer.new(otel_tracer: otel_tracer)
-      trace_id = nil
-      tracer.trace(name: "parent") do |trace|
-        trace_id = trace.trace_id
-        trace.span(name: "child") do |span|
-          child = span.start_observation("grandchild")
-          expect(child.trace_id).to eq(trace_id)
-          child.end
-        end
-      end
+      parent_span = otel_tracer.start_span("parent")
+      parent_obs = Langfuse::Span.new(parent_span, otel_tracer)
+      trace_id = parent_obs.trace_id
+
+      child = parent_obs.start_observation("child")
+      grandchild = child.start_observation("grandchild")
+      expect(grandchild.trace_id).to eq(trace_id)
+      grandchild.end
+      child.end
     end
   end
 
   describe "integration with real OpenTelemetry spans" do
     it "works with actual span lifecycle" do
-      tracer = Langfuse::Tracer.new(otel_tracer: otel_tracer)
-      span_data = nil
+      parent_span = otel_tracer.start_span("parent")
+      parent_obs = Langfuse::Span.new(parent_span, otel_tracer)
 
-      tracer.trace(name: "test-trace") do |trace|
-        child = trace.start_observation("child-operation", { input: { data: "test" } })
-        child.output = { result: "success" }
-        child.metadata = { source: "api" }
-        child.level = "DEFAULT"
-        span_data = child.otel_span.to_span_data
-        child.end
-      end
+      child = parent_obs.start_observation("child-operation", { input: { data: "test" } })
+      child.output = { result: "success" }
+      child.metadata = { source: "api" }
+      child.level = "DEFAULT"
+      span_data = child.otel_span.to_span_data
+      child.end
 
       expect(span_data.attributes["langfuse.observation.type"]).to eq("span")
       expect(JSON.parse(span_data.attributes["langfuse.observation.input"])).to eq({ "data" => "test" })
       expect(JSON.parse(span_data.attributes["langfuse.observation.output"])).to eq({ "result" => "success" })
       expect(span_data.attributes["langfuse.observation.metadata.source"]).to eq("api")
       expect(span_data.attributes["langfuse.observation.level"]).to eq("DEFAULT")
+    end
+  end
+
+  describe "#trace_url" do
+    before do
+      Langfuse.configure do |config|
+        config.public_key = "pk_test_123"
+        config.secret_key = "sk_test_456"
+        config.base_url = "https://cloud.langfuse.com"
+      end
+    end
+
+    after do
+      Langfuse.reset!
+    end
+
+    it "generates trace URL using client" do
+      trace_id = observation.trace_id
+      url = observation.trace_url
+
+      expect(url).to eq("https://cloud.langfuse.com/traces/#{trace_id}")
+    end
+
+    it "uses configured base_url" do
+      Langfuse.configure do |config|
+        config.public_key = "pk_test_123"
+        config.secret_key = "sk_test_456"
+        config.base_url = "https://custom.langfuse.com"
+      end
+
+      trace_id = observation.trace_id
+      url = observation.trace_url
+
+      expect(url).to eq("https://custom.langfuse.com/traces/#{trace_id}")
+    end
+
+    it "calls client.trace_url with correct trace_id" do
+      mock_client = instance_double(Langfuse::Client)
+      allow(Langfuse).to receive(:client).and_return(mock_client)
+      trace_id = observation.trace_id
+
+      expect(mock_client).to receive(:trace_url).with(trace_id).and_return("https://example.com/traces/#{trace_id}")
+
+      observation.trace_url
     end
   end
 end

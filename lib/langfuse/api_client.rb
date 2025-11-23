@@ -20,6 +20,7 @@ module Langfuse
   #     logger: Logger.new($stdout)
   #   )
   #
+  # rubocop:disable Metrics/ClassLength
   class ApiClient
     attr_reader :public_key, :secret_key, :base_url, :timeout, :logger, :cache
 
@@ -127,6 +128,40 @@ module Langfuse
       end
     end
 
+    # Send a batch of events to the Langfuse ingestion API
+    #
+    # Sends events (scores, traces, observations) to the ingestion endpoint.
+    # This method does not retry on failure (POST requests are not retried by default).
+    #
+    # @param events [Array<Hash>] Array of event hashes to send
+    # @return [void]
+    # @raise [UnauthorizedError] if authentication fails
+    # @raise [ApiError] for other API errors
+    #
+    # @example
+    #   events = [
+    #     {
+    #       id: SecureRandom.uuid,
+    #       type: "score-create",
+    #       timestamp: Time.now.iso8601,
+    #       body: { name: "quality", value: 0.85, trace_id: "abc123..." }
+    #     }
+    #   ]
+    #   api_client.send_batch(events)
+    def send_batch(events)
+      raise ArgumentError, "events must be an array" unless events.is_a?(Array)
+      raise ArgumentError, "events array cannot be empty" if events.empty?
+
+      path = "/api/public/ingestion"
+      payload = { batch: events }
+
+      response = connection.post(path, payload)
+      handle_batch_response(response)
+    rescue Faraday::Error => e
+      logger.error("Langfuse batch send failed: #{e.message}")
+      raise ApiError, "Batch send failed: #{e.message}"
+    end
+
     private
 
     # Fetch a prompt from the API (without caching)
@@ -214,7 +249,7 @@ module Langfuse
     #
     # @return [String]
     def user_agent
-      "langfuse-ruby/#{Langfuse::VERSION}"
+      "langfuse-rb/#{Langfuse::VERSION}"
     end
 
     # Build query parameters for prompt request
@@ -250,14 +285,41 @@ module Langfuse
       end
     end
 
+    # Handle HTTP response for batch requests
+    #
+    # @param response [Faraday::Response] The HTTP response
+    # @return [void]
+    # @raise [UnauthorizedError] if status is 401
+    # @raise [ApiError] for other error statuses
+    def handle_batch_response(response)
+      case response.status
+      when 200, 201, 204, 207
+        nil
+      when 401
+        raise UnauthorizedError, "Authentication failed. Check your API keys."
+      else
+        error_message = extract_error_message(response)
+        raise ApiError, "Batch send failed (#{response.status}): #{error_message}"
+      end
+    end
+
     # Extract error message from response body
     #
     # @param response [Faraday::Response] The HTTP response
     # @return [String] The error message
     def extract_error_message(response)
-      return "Unknown error" unless response.body.is_a?(Hash)
+      body_hash = case response.body
+                  in Hash => h then h
+                  in String => s then begin
+                    JSON.parse(s)
+                  rescue StandardError
+                    {}
+                  end
+                  else {}
+                  end
 
-      response.body["message"] || response.body["error"] || "Unknown error"
+      %w[message error].filter_map { |key| body_hash[key] }.first || "Unknown error"
     end
   end
 end
+# rubocop:enable Metrics/ClassLength

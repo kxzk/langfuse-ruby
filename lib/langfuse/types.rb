@@ -50,6 +50,25 @@ module Langfuse
     # @return [Array<String>] Array of level strings
     LEVELS = %w[DEBUG DEFAULT WARNING ERROR].freeze
 
+    # Data types for Langfuse scores
+    #
+    # Used to categorize score values:
+    # - `numeric`: Numeric values (Integer, Float, BigDecimal)
+    # - `boolean`: Boolean values (true/false or 0/1)
+    # - `categorical`: String values for categorical scores
+    #
+    # @return [Hash<Symbol, String>] Hash mapping symbol keys to API string values
+    SCORE_DATA_TYPES = {
+      numeric: "NUMERIC",
+      boolean: "BOOLEAN",
+      categorical: "CATEGORICAL"
+    }.freeze
+
+    # Valid score data type symbols
+    #
+    # @return [Array<Symbol>] Array of valid data type symbols
+    VALID_SCORE_DATA_TYPES = SCORE_DATA_TYPES.keys.freeze
+
     # Attributes for Langfuse span observations
     #
     # Spans are used to track operations, functions, or logical units of work.

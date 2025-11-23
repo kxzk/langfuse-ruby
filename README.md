@@ -1,10 +1,12 @@
-# Langfuse Ruby SDK
+![header](https://camo.githubusercontent.com/26d19b945bc752101b4aca468e07b118a44af07340db79af29f7df95505f2cea/68747470733a2f2f6c616e67667573652e636f6d2f6c616e67667573655f6c6f676f5f77686974652e706e67)
 
-Ruby SDK for [Langfuse](https://langfuse.com) - Open-source LLM observability and prompt management.
+# Langfuse Ruby SDK
 
 [![Gem Version](https://badge.fury.io/rb/langfuse.svg)](https://badge.fury.io/rb/langfuse)
 [![Ruby](https://img.shields.io/badge/ruby-%3E%3D%203.2.0-ruby.svg)](https://www.ruby-lang.org/en/)
 [![Test Coverage](https://img.shields.io/badge/coverage-99.6%25-brightgreen.svg)](coverage)
+
+> Ruby SDK for [Langfuse](https://langfuse.com) - Open-source LLM observability and prompt management.
 
 ## Features
 
@@ -22,7 +24,7 @@ Ruby SDK for [Langfuse](https://langfuse.com) - Open-source LLM observability an
 Add to your Gemfile:
 
 ```ruby
-gem 'langfuse'
+gem 'langfuse-rb'
 ```
 
 Then run:
@@ -124,7 +126,9 @@ production_prompt = Langfuse.client.get_prompt("greeting", label: "production")
 # client.get_prompt("greeting", version: 2, label: "production")  # Raises ArgumentError
 ```
 
-**Important:** The `version` and `label` parameters are **mutually exclusive**. You can specify one or the other, but not both. When using cache warming with version overrides, the SDK automatically handles this - prompts with version overrides won't send the default label.
+> [!IMPORTANT]
+> The `version` and `label` parameters are **mutually exclusive**. You can specify one or the other, but not both. When using cache warming with version overrides, the SDK automatically handles this - prompts with version overrides won't send the default label.
+
 
 ### Advanced Templating
 
@@ -182,11 +186,11 @@ The SDK provides comprehensive LLM tracing built on **OpenTelemetry**. Traces ca
 ### Basic Example
 
 ```ruby
-Langfuse.trace(name: "chat-completion", user_id: "user-123") do |trace|
-  trace.generation(
-    name: "openai-call",
-    model: "gpt-4",
-    input: [{ role: "user", content: "Hello!" }]
+Langfuse.observe("chat-completion", user_id: "user-123") do |trace|
+  trace.start_observation(
+    "openai-call",
+    { model: "gpt-4", input: [{ role: "user", content: "Hello!" }] },
+    as_type: :generation
   ) do |gen|
     response = openai_client.chat(
       parameters: {
@@ -195,12 +199,14 @@ Langfuse.trace(name: "chat-completion", user_id: "user-123") do |trace|
       }
     )
 
-    gen.output = response.choices.first.message.content
-    gen.usage = {
-      prompt_tokens: response.usage.prompt_tokens,
-      completion_tokens: response.usage.completion_tokens,
-      total_tokens: response.usage.total_tokens
-    }
+    gen.update(
+      output: response.choices.first.message.content,
+      usage_details: {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: response.usage.completion_tokens,
+        total_tokens: response.usage.total_tokens
+      }
+    )
   end
 end
 ```
@@ -208,26 +214,28 @@ end
 ### RAG Pipeline Example
 
 ```ruby
-Langfuse.trace(name: "rag-query", user_id: "user-456") do |trace|
+Langfuse.observe("rag-query", user_id: "user-456") do |trace|
   # Document retrieval
-  docs = trace.span(name: "retrieval", input: { query: "What is Ruby?" }) do |span|
+  docs = trace.start_observation("retrieval", { input: { query: "What is Ruby?" } }, as_type: :retriever) do |retriever|
     results = vector_db.search(query_embedding, limit: 5)
-    span.output = { count: results.size }
+    retriever.update(output: { count: results.size })
     results
   end
 
   # LLM generation with context
-  trace.generation(
-    name: "gpt4-completion",
-    model: "gpt-4",
-    input: build_prompt_with_context(docs)
+  trace.start_observation(
+    "gpt4-completion",
+    { model: "gpt-4", input: build_prompt_with_context(docs) },
+    as_type: :generation
   ) do |gen|
     response = openai_client.chat(...)
-    gen.output = response.choices.first.message.content
-    gen.usage = {
-      prompt_tokens: response.usage.prompt_tokens,
-      completion_tokens: response.usage.completion_tokens
-    }
+    gen.update(
+      output: response.choices.first.message.content,
+      usage_details: {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: response.usage.completion_tokens
+      }
+    )
   end
 end
 ```
@@ -239,17 +247,100 @@ Prompts fetched via the SDK are automatically linked to your traces:
 ```ruby
 prompt = Langfuse.client.get_prompt("support-assistant", version: 3)
 
-Langfuse.trace(name: "support-query") do |trace|
-  trace.generation(
-    name: "response",
-    model: "gpt-4",
-    prompt: prompt  # Automatically captured in trace!
+Langfuse.observe("support-query") do |trace|
+  trace.start_observation(
+    "response",
+    { model: "gpt-4", prompt: prompt },  # Automatically captured in trace!
+    as_type: :generation
   ) do |gen|
     messages = prompt.compile(customer_name: "Alice")
     response = openai_client.chat(parameters: { model: "gpt-4", messages: messages })
-    gen.output = response.choices.first.message.content
+    gen.update(output: response.choices.first.message.content)
   end
 end
+```
+
+### Observation Types
+
+The SDK supports multiple observation types for different use cases:
+
+**Generation (LLM calls):**
+```ruby
+Langfuse.observe("llm-call", as_type: :generation) do |gen|
+  gen.model = "gpt-4"
+  gen.input = [{ role: "user", content: "Hello!" }]
+  response = call_llm
+  gen.update(
+    output: response,
+    usage_details: { prompt_tokens: 100, completion_tokens: 50 }
+  )
+end
+```
+
+**Embedding:**
+```ruby
+Langfuse.observe("generate-embeddings", as_type: :embedding) do |embedding|
+  embedding.model = "text-embedding-ada-002"
+  embedding.input = ["Ruby is a language", "Python is a language"]
+  vectors = embedding_service.generate(embedding.input)
+  embedding.update(
+    output: vectors,
+    usage_details: { prompt_tokens: 20, total_tokens: 20 }
+  )
+end
+```
+
+**Agent (with tool calls):**
+```ruby
+Langfuse.observe("agent-workflow", as_type: :agent) do |agent|
+  agent.input = { task: "Find weather for NYC" }
+
+  # Agent uses tools
+  agent.start_observation("weather-api", { tool_name: "weather_api" }, as_type: :tool) do |tool|
+    weather = fetch_weather("NYC")
+    tool.update(output: weather)
+  end
+
+  agent.update(output: { result: "Sunny, 72°F" })
+end
+```
+
+**Chain (multi-step workflow):**
+```ruby
+Langfuse.observe("rag-pipeline", as_type: :chain) do |chain|
+  chain.input = { query: "What is Ruby?" }
+
+  # Step 1: Retrieve documents
+  docs = chain.start_observation("retrieve", { query: chain.input[:query] }, as_type: :retriever) do |ret|
+    vector_db.search(chain.input[:query])
+  end
+
+  # Step 2: Generate response
+  chain.start_observation("generate", { model: "gpt-4" }, as_type: :generation) do |gen|
+    response = llm.generate(docs)
+    gen.update(output: response)
+  end
+
+  chain.update(output: { answer: "Ruby is a programming language..." })
+end
+```
+
+**Event (point-in-time):**
+```ruby
+# Events auto-end immediately
+Langfuse.observe("user-action", { input: { action: "button_click" } }, as_type: :event)
+```
+
+**Stateful API (manual control):**
+```ruby
+# Create observation without block
+span = Langfuse.observe("data-processing", input: { query: "test" })
+result = process_data
+span.update(output: result, metadata: { duration_ms: 150 })
+span.end
+
+# Update trace-level attributes
+span.update_trace(user_id: "user-123", session_id: "session-456", tags: ["production"])
 ```
 
 ### OpenTelemetry Integration
@@ -585,28 +676,62 @@ prompt.tags        # Array
 prompt.config      # Hash
 ```
 
-### Tracing Methods
+### Observation Methods
 
 ```ruby
-# Create a trace
-Langfuse.trace(name:, user_id: nil, session_id: nil, metadata: {}) do |trace|
-  # Add spans, generations, events
+# Create a root observation (block-based, auto-ends)
+Langfuse.observe(name, attrs = {}, as_type: :span, **kwargs) do |obs|
+  # Add child observations, update attributes
 end
 
-# Add a generation (LLM call)
-trace.generation(name:, model:, input:, prompt: nil) do |gen|
-  gen.output = "..."
-  gen.usage = { prompt_tokens: 10, completion_tokens: 20 }
+# Create a root observation (stateful, manual end)
+obs = Langfuse.observe(name, attrs = {}, as_type: :span, **kwargs)
+obs.update(output: "...")
+obs.end
+
+# Create child observation (block-based)
+parent.start_observation(name, attrs = {}, as_type: :span) do |child|
+  child.update(output: "...")
 end
 
-# Add a span (any operation)
-trace.span(name:, input: nil) do |span|
-  span.output = "..."
-  span.metadata = { ... }
-end
+# Create child observation (stateful)
+child = parent.start_observation(name, attrs = {}, as_type: :generation)
+child.update(output: "...", usage_details: { prompt_tokens: 10, completion_tokens: 20 })
+child.end
 
-# Add an event (point-in-time)
-trace.event(name:, input: nil, output: nil)
+# Update observation attributes
+obs.update(input: {...}, output: {...}, metadata: {...}, level: "error")
+
+# Direct setters (alternative to update)
+obs.input = {...}
+obs.output = {...}
+obs.metadata = {...}
+obs.level = "error"  # "debug", "default", "warning", "error"
+
+# Generation/Embedding specific setters
+gen.model = "gpt-4"
+gen.usage = { prompt_tokens: 10, completion_tokens: 20 }  # Shorthand for usage_details
+gen.model_parameters = { temperature: 0.7, max_tokens: 100 }
+
+# Update trace-level attributes (user_id, session_id, tags, etc.)
+obs.update_trace(user_id: "user-123", session_id: "session-456", tags: ["production"])
+
+# Observation properties
+obs.id         # String - Hex-encoded span ID
+obs.trace_id   # String - Hex-encoded trace ID
+obs.type       # String - Observation type ("span", "generation", etc.)
+
+# Observation types
+as_type: :span        # General-purpose operation
+as_type: :generation  # LLM call
+as_type: :embedding   # Embedding generation
+as_type: :event       # Point-in-time occurrence (auto-ends)
+as_type: :agent       # Agent-based workflow
+as_type: :tool        # Tool/API call
+as_type: :chain       # Multi-step workflow
+as_type: :retriever   # Document retrieval
+as_type: :evaluator   # Quality assessment
+as_type: :guardrail   # Safety/compliance check
 ```
 
 See [API documentation](https://langfuse.com/docs) for complete reference.
@@ -639,14 +764,6 @@ bundle exec rspec
 # Run linter
 bundle exec rubocop -a
 ```
-
-## Roadmap & Status
-
-**Current Status:** Production-ready with 99.6% test coverage
-
-For detailed implementation plans and progress, see:
-- [IMPLEMENTATION_PLAN_V2.md](IMPLEMENTATION_PLAN_V2.md) - Detailed roadmap
-- [PROGRESS.md](PROGRESS.md) - Current status and milestones
 
 ## Contributing
 

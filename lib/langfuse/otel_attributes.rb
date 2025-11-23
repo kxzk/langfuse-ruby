@@ -195,7 +195,7 @@ module Langfuse
     # @param value [Object] Value to flatten
     # @param key [String] Attribute key prefix
     # @return [Hash] Flattened attributes hash
-    # @private
+    # @api private
     def self.flatten_hash_value(value, key)
       if value.is_a?(Hash)
         # Recursively flatten nested hashes
@@ -216,7 +216,7 @@ module Langfuse
     # @param hash [Hash] Hash to get value from
     # @param key [Symbol, String] Key to look up
     # @return [Object, nil] Value from hash or nil
-    # @private
+    # @api private
     def self.get_hash_value(hash, key)
       return hash[key] if hash.key?(key)
       return hash[key.to_s] if hash.key?(key.to_s)
@@ -229,7 +229,7 @@ module Langfuse
     # @param type [String] Observation type
     # @param get_value [Proc] Lambda to get values from attributes hash
     # @return [Hash] Base observation attributes
-    # @private
+    # @api private
     def self.build_observation_base_attributes(type, get_value)
       {
         OBSERVATION_TYPE => type,
@@ -253,7 +253,7 @@ module Langfuse
     # @param otel_attributes [Hash] Attributes hash to modify
     # @param prompt [Hash, Object, nil] Prompt hash or object
     # @return [void]
-    # @private
+    # @api private
     # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     def self.add_prompt_attributes(otel_attributes, prompt)
       return unless prompt
