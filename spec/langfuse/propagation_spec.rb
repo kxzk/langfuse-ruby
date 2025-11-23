@@ -152,11 +152,11 @@ RSpec.describe Langfuse::Propagation do
       end
 
       it "allows values exactly 200 characters" do
-        value_200 = "a" * 200
+        value200 = "a" * 200
         Langfuse.observe("test-operation") do |span|
-          described_class.propagate_attributes(user_id: value_200) do
+          described_class.propagate_attributes(user_id: value200) do
             attrs = span.otel_span.attributes
-            expect(attrs["user.id"]).to eq(value_200)
+            expect(attrs["user.id"]).to eq(value200)
           end
         end
       end
@@ -225,7 +225,7 @@ RSpec.describe Langfuse::Propagation do
       end
     end
 
-    context "return value" do
+    context "with return value" do
       it "returns the result of the block" do
         result = described_class.propagate_attributes(user_id: "user_123") do
           "block_result"

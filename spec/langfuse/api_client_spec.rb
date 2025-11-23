@@ -512,11 +512,12 @@ RSpec.describe Langfuse::ApiClient do
       end
     end
 
+    # rubocop:disable RSpec/MultipleMemoizedHelpers
     context "with Rails cache backend (fetch_with_lock)" do
       let(:rails_cache) do
         # Create a simple object that responds to fetch_with_lock
         Class.new do
-          def respond_to?(method, include_private = false)
+          def respond_to?(method, include_private: false)
             method == :fetch_with_lock || super
           end
 
@@ -572,6 +573,7 @@ RSpec.describe Langfuse::ApiClient do
         rails_cached_client.get_prompt(prompt_name)
       end
     end
+    # rubocop:enable RSpec/MultipleMemoizedHelpers
   end
 
   describe "#send_batch" do

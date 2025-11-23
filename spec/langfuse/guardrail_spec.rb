@@ -25,7 +25,8 @@ RSpec.describe Langfuse::Guardrail do
 
       span_data = guardrail.otel_span.to_span_data
       expect(JSON.parse(span_data.attributes["langfuse.observation.output"])).to eq({ "safe" => true,
-                                                                                      "risk_score" => 0.15, "violations" => [] })
+                                                                                      "risk_score" => 0.15,
+                                                                                      "violations" => [] })
       expect(span_data.attributes["langfuse.observation.level"]).to eq("DEFAULT")
       expect(span_data.attributes["langfuse.observation.metadata.policy_version"]).to eq("v2")
     end

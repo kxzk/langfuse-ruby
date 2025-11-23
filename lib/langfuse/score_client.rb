@@ -199,6 +199,7 @@ module Langfuse
     # @param metadata [Hash, nil] Metadata
     # @param data_type [String] Data type string (NUMERIC, BOOLEAN, CATEGORICAL)
     # @return [Hash] Event hash
+    # rubocop:disable Metrics/ParameterLists
     def build_score_event(name:, value:, trace_id:, observation_id:, comment:, metadata:, data_type:)
       body = {
         id: SecureRandom.uuid,
@@ -218,6 +219,7 @@ module Langfuse
         body: body
       }
     end
+    # rubocop:enable Metrics/ParameterLists
 
     # Normalize and validate score value based on data type
     #
@@ -225,6 +227,7 @@ module Langfuse
     # @param data_type [Symbol] Data type symbol
     # @return [Object] Normalized value
     # @raise [ArgumentError] if value doesn't match data type
+    # rubocop:disable Metrics/CyclomaticComplexity
     def normalize_value(value, data_type)
       case data_type
       when :numeric
@@ -248,6 +251,7 @@ module Langfuse
         raise ArgumentError, "Invalid data_type: #{data_type}"
       end
     end
+    # rubocop:enable Metrics/CyclomaticComplexity
 
     # Validate score name
     #

@@ -1,8 +1,7 @@
-This is the official **Langfuse Ruby SDK**, providing LLM tracing, observability, and prompt management capabilities. The project is being built from scratch following an iterative, test-driven approach.
+This is the official **Langfuse Ruby SDK** (langfuse-rb), providing LLM tracing, observability, and prompt management capabilities. The project is being built from scratch following an iterative, test-driven approach.
 
 **Key Design Principles:**
 - **Rails-Friendly**: Global configuration pattern with `Langfuse.configure` block
-- **Iterative Development**: Build small, testable increments following the implementation plan
 - **Minimal Dependencies**: Only add dependencies when needed
 - **Thread-Safe**: Safe for multi-threaded environments
 
@@ -93,7 +92,7 @@ end
 - **Instance vars**: `@snake_case` (e.g., `@api_client`)
 
 ### Method Length
-- Max 20 lines (excluding specs)
+- Max 22 lines (excluding specs)
 - Break longer methods into smaller, testable units
 
 ## Important References

@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help build check clean console env fix install lint setup test
+.PHONY: help build check clean env fix install lint setup test
 
 BLUE := \033[34m
 WHITE := \033[37m
@@ -14,7 +14,6 @@ help:
 	@echo "  $(WHITE)make build$(RESET)     $(GRAY)Build the gem$(RESET)"
 	@echo "  $(WHITE)make check$(RESET)     $(GRAY)Run tests + lint (CI check)$(RESET)"
 	@echo "  $(WHITE)make clean$(RESET)     $(GRAY)Remove generated files$(RESET)"
-	@echo "  $(WHITE)make console$(RESET)   $(GRAY)Open interactive Ruby console$(RESET)"
 	@echo "  $(WHITE)make env$(RESET)       $(GRAY)Copy .env.example to .env$(RESET)"
 	@echo "  $(WHITE)make fix$(RESET)       $(GRAY)Auto-fix RuboCop violations$(RESET)"
 	@echo "  $(WHITE)make install$(RESET)   $(GRAY)Install gem locally$(RESET)"
@@ -32,9 +31,6 @@ clean:
 	rm -f langfuse-*.gem
 	rm -rf coverage/
 	rm -rf pkg/
-
-console:
-	bundle exec irb -r ./lib/langfuse
 
 env:
 	cp .env.example .env

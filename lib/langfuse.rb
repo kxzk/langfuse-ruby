@@ -44,6 +44,7 @@ require_relative "langfuse/client"
 
 # rubocop:disable Metrics/ModuleLength
 module Langfuse
+  # rubocop:disable Metrics/ClassLength
   class << self
     attr_writer :configuration
 
@@ -183,6 +184,7 @@ module Langfuse
     #
     # @example Categorical score
     #   Langfuse.create_score(name: "category", value: "high", trace_id: "abc123", data_type: :categorical)
+    # rubocop:disable Metrics/ParameterLists
     def create_score(name:, value:, trace_id: nil, observation_id: nil, comment: nil, metadata: nil,
                      data_type: :numeric)
       client.create_score(
@@ -195,6 +197,7 @@ module Langfuse
         data_type: data_type
       )
     end
+    # rubocop:enable Metrics/ParameterLists
 
     # Create a score for the currently active observation (from OTel span)
     #
@@ -449,5 +452,6 @@ module Langfuse
       observation_class.new(otel_span, otel_tracer, attributes: attributes)
     end
   end
+  # rubocop:enable Metrics/ClassLength
 end
 # rubocop:enable Metrics/ModuleLength

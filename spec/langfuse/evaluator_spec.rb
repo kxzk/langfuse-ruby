@@ -25,7 +25,8 @@ RSpec.describe Langfuse::Evaluator do
 
       span_data = evaluator.otel_span.to_span_data
       expect(JSON.parse(span_data.attributes["langfuse.observation.output"])).to eq({ "overall_score" => 0.87,
-                                                                                      "criteria_scores" => { "accuracy" => 0.92 } })
+                                                                                      "criteria_scores" =>
+                                                                                        { "accuracy" => 0.92 } })
       expect(span_data.attributes["langfuse.observation.level"]).to eq("DEFAULT")
       expect(span_data.attributes["langfuse.observation.metadata.evaluation_method"]).to eq("automated")
     end

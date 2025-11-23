@@ -39,7 +39,8 @@ RSpec.describe Langfuse::Embedding do
   describe "integration with Langfuse.start_observation" do
     it "creates embedding via start_observation" do
       embedding_obj = Langfuse.start_observation("test-embedding",
-                                                 { input: { texts: ["test"] }, model: "text-embedding-ada-002" }, as_type: :embedding)
+                                                 { input: { texts: ["test"] }, model: "text-embedding-ada-002" },
+                                                 as_type: :embedding)
 
       expect(embedding_obj).to be_a(described_class)
       expect(embedding_obj.type).to eq("embedding")
@@ -52,7 +53,9 @@ RSpec.describe Langfuse::Embedding do
       parent_observation = Langfuse::Span.new(parent_span, otel_tracer)
 
       embedding_obj = parent_observation.start_observation("nested-embedding",
-                                                           { input: { texts: ["test"] }, model: "text-embedding-ada-002" }, as_type: :embedding)
+                                                           { input: { texts: ["test"] },
+                                                             model: "text-embedding-ada-002" },
+                                                           as_type: :embedding)
       expect(embedding_obj).to be_a(described_class)
       expect(embedding_obj.trace_id).to eq(parent_observation.trace_id)
     end
