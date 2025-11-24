@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name = "langfuse-rb"
   spec.version = Langfuse::VERSION
   spec.authors = ["SimplePractice"]
-  spec.email = ["developers@simplepractice.com"]
+  spec.email = ["open-source-langfuse-rb@simplepractice.com"]
 
   spec.summary = "Ruby SDK for Langfuse - LLM observability and prompt management"
   spec.description = "Official Ruby SDK for Langfuse, providing LLM tracing, observability, " \
