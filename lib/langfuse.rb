@@ -2,6 +2,7 @@
 
 require_relative "langfuse/version"
 require_relative "langfuse/types"
+require_relative "langfuse/otel_attributes"
 
 # Langfuse Ruby SDK
 #
